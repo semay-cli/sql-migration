@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func ImportSQLFile(db *gorm.DB, filename string) error {
+func ImportSQLFileManyInserts(db *gorm.DB, filename string) error {
 	file, err := os.Open(filename)
 	if err != nil {
 		return err
@@ -35,4 +35,19 @@ func ImportSQLFile(db *gorm.DB, filename string) error {
 	}
 
 	return scanner.Err()
+}
+
+func ImportSQLFile(db *gorm.DB, filename string) error {
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+
+	sql := string(content)
+
+	if err := db.Exec(sql).Error; err != nil {
+		return fmt.Errorf("error executing SQL from file %s: %w", filename, err)
+	}
+
+	return nil
 }

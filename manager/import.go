@@ -13,17 +13,26 @@ import (
 
 // getAllSQLTables scans the directory for *_schema.sql or *_data.sql files and extracts table names.
 func getAllSQLTables(dir string, suffix string) ([]string, error) {
-	files, err := os.ReadDir(dir)
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
+
 	var tables []string
-	for _, f := range files {
-		if !f.IsDir() && strings.HasSuffix(f.Name(), suffix) {
-			name := strings.TrimSuffix(f.Name(), suffix)
-			tables = append(tables, name)
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if strings.HasSuffix(name, suffix) {
+			tableName := strings.TrimSuffix(name, suffix)
+			if tableName != "" {
+				tables = append(tables, tableName)
+			}
 		}
 	}
+
 	return tables, nil
 }
 
@@ -63,22 +72,40 @@ var importCmd = &cobra.Command{
 		var tables []string
 		if tableName == "" {
 			// No table specified: import all tables found in the input directory
-			tables, err = getAllSQLTables(inputDir, "_schema.sql")
-			if err != nil {
-				fmt.Printf("Failed to get table names from input directory: %v\n", err)
-				return
+			if schemaOnly {
+				tables, err = getAllSQLTables(inputDir, "_schema.sql")
+				if err != nil {
+					fmt.Printf("Failed to get table names from input directory: %v\n", err)
+					return
+				}
+				if len(tables) == 0 {
+					fmt.Println("No schema SQL files found in the input directory.")
+					return
+				}
+				fmt.Printf("Importing all tables: %s\n", strings.Join(tables, ", "))
 			}
-			if len(tables) == 0 {
-				fmt.Println("No schema SQL files found in the input directory.")
-				return
+
+			if dataOnly {
+				tables, err = getAllSQLTables(inputDir, "_data.sql")
+				if err != nil {
+					fmt.Printf("Failed to get table names from input directory: %v\n", err)
+					return
+				}
+				if len(tables) == 0 {
+					fmt.Println("No schema SQL files found in the input directory.")
+					return
+				}
+				fmt.Printf("Importing all tables: %s\n", strings.Join(tables, ", "))
 			}
-			fmt.Printf("Importing all tables: %s\n", strings.Join(tables, ", "))
+
+			// tables, err = getAllTableNames(dsnCfg.Driver, db)
+
 		} else {
 			tables = []string{tableName}
 		}
 
 		for _, tbl := range tables {
-			if !dataOnly {
+			if schemaOnly {
 				schemaFile := filepath.Join(inputDir, fmt.Sprintf("%s_schema.sql", tbl))
 				if _, err := os.Stat(schemaFile); err == nil {
 					fmt.Printf("Importing schema from %s\n", schemaFile)
@@ -89,7 +116,7 @@ var importCmd = &cobra.Command{
 					}
 				}
 			}
-			if !schemaOnly {
+			if dataOnly {
 				dataFile := filepath.Join(inputDir, fmt.Sprintf("%s_data.sql", tbl))
 				if _, err := os.Stat(dataFile); err == nil {
 					fmt.Printf("Importing data from %s\n", dataFile)

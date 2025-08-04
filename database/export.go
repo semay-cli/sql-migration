@@ -1,9 +1,12 @@
 package database
 
 import (
+	"bufio"
+	"bytes"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -85,6 +88,8 @@ func ExportDataSQL(db *gorm.DB, driver, tableName, filename string) error {
 	}
 	defer file.Close()
 
+	file.WriteString(fmt.Sprintf("INSERT INTO %s (%s) VALUES\n", tableName, strings.Join(cols, ", ")))
+
 	for rows.Next() {
 		values := make([]any, colCount)
 		ptrs := make([]any, colCount)
@@ -104,19 +109,99 @@ func ExportDataSQL(db *gorm.DB, driver, tableName, filename string) error {
 			case []byte:
 				s := string(v)
 				valueStrings = append(valueStrings, "'"+escapeSQLString(s)+"'")
+			case time.Time:
+				// Format MySQL-compatible datetime string
+				valueStrings = append(valueStrings, fmt.Sprintf("'%s'", v.Format("2006-01-02 15:04:05")))
 			default:
 				valueStrings = append(valueStrings, fmt.Sprintf("'%v'", v))
 			}
 		}
 
-		stmt := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s);\n",
-			tableName,
-			strings.Join(cols, ", "),
+		stmt := fmt.Sprintf("(%s),\n",
 			strings.Join(valueStrings, ", "),
 		)
 
 		file.WriteString(stmt)
 	}
 
+	return nil
+}
+
+func FixSQLFileLastComma(filePath string) error {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read file: %w", err)
+	}
+
+	// Look for the last ",\n" and replace it with ";\n"
+	target := []byte(",\n")
+	replacement := []byte(";\n")
+	idx := bytes.LastIndex(content, target)
+
+	if idx == -1 {
+		return fmt.Errorf("no trailing comma found in: %s", filePath)
+	}
+
+	copy(content[idx:], replacement)
+
+	err = os.WriteFile(filePath, content, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	fmt.Printf("Fixed last comma in: %s\n", filePath)
+	return nil
+}
+
+func FixOrTruncateSQLFile(filePath string) error {
+	// First, open and count the number of non-empty lines
+	file, err := os.Open(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to open file: %w", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	lineCount := 0
+	for scanner.Scan() {
+		if line := scanner.Text(); len(line) > 0 {
+			lineCount++
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error scanning file: %w", err)
+	}
+
+	// If only one non-empty line, truncate the file
+	if lineCount <= 1 {
+		err := os.WriteFile(filePath, []byte{}, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to truncate file: %w", err)
+		}
+		fmt.Printf("File truncated (only one line): %s\n", filePath)
+		return nil
+	}
+
+	// Otherwise, read content and fix the trailing comma
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read file: %w", err)
+	}
+
+	target := []byte(",\n")
+	replacement := []byte(";\n")
+	idx := bytes.LastIndex(content, target)
+
+	if idx == -1 {
+		return fmt.Errorf("no trailing comma found in: %s", filePath)
+	}
+
+	copy(content[idx:], replacement)
+	err = os.WriteFile(filePath, content, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to write file: %w", err)
+	}
+
+	fmt.Printf("Fixed last comma in: %s\n", filePath)
 	return nil
 }

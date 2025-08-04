@@ -138,6 +138,7 @@ var exportCmd = &cobra.Command{
 				} else {
 					fmt.Printf("Data exported to %s\n", dataFile)
 				}
+				database.FixOrTruncateSQLFile(dataFile)
 			}
 		}
 	},

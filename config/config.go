@@ -13,6 +13,7 @@ type DSNConfig struct {
 
 // LoadDSNConfig loads DSNConfig from the specified JSON file.
 func LoadDSNConfig(filename string) (*DSNConfig, error) {
+
 	file, err := os.Open(filename)
 	if err != nil {
 		return nil, err
